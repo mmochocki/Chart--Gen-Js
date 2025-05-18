@@ -65,6 +65,130 @@ function countAnswers(data, headers) {
     return counts;
 }
 
+/**
+ * Creates a bar chart visualization
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ * @param {Array} headers - Question headers
+ * @param {Array} counts - Answer counts for each question
+ * @returns {Chart} Chart.js instance
+ */
+function createBarChart(ctx, headers, counts) {
+    const options = [
+        "Highly motivating",
+        "Moderately motivating",
+        "Slightly motivating",
+        "Not motivating"
+    ];
+    const colors = ['#4caf50', '#ffeb3b', '#ff9800', '#f44336'];
+
+    const datasets = options.map((option, idx) => ({
+        label: option,
+        data: counts.map(c => c[option]),
+        backgroundColor: colors[idx],
+        borderColor: colors[idx],
+        borderWidth: 1
+    }));
+
+    return new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: headers.map(header => 
+                header.length > 30 ? header.substring(0, 27) + '...' : header
+            ),
+            datasets: datasets
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { 
+                    position: 'right',
+                    labels: { padding: 20 }
+                },
+                title: { 
+                    display: true, 
+                    text: 'Employee Motivation Factors',
+                    padding: 20,
+                    font: { size: 16 }
+                }
+            },
+            scales: {
+                x: { 
+                    stacked: true,
+                    position: 'top',
+                    ticks: {
+                        beginAtZero: true,
+                        stepSize: 1
+                    }
+                },
+                y: { 
+                    stacked: true,
+                    ticks: {
+                        autoSkip: false,
+                        maxRotation: 0,
+                        minRotation: 0
+                    }
+                }
+            }
+        },
+        plugins: [{
+            id: 'customLabels',
+            afterDatasetsDraw: function(chart) {
+                const ctx = chart.ctx;
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.font = 'bold 12px Arial';
+                ctx.fillStyle = 'white';
+
+                const meta = chart.getDatasetMeta(0);
+                meta.data.forEach((_, index) => {
+                    let xStart = chart.chartArea.left;
+                    const y = chart.getDatasetMeta(0).data[index].y;
+
+                    chart.data.datasets.forEach((dataset, datasetIndex) => {
+                        const value = dataset.data[index];
+                        if (value > 0) {
+                            const barElement = chart.getDatasetMeta(datasetIndex).data[index];
+                            const barWidth = barElement.width;
+                            const xCenter = xStart + (barWidth / 2);
+                            
+                            if (barWidth > 25) {
+                                ctx.fillText(value.toString(), xCenter, y);
+                            }
+                            xStart += barWidth;
+                        }
+                    });
+                });
+
+                ctx.restore();
+            }
+        }]
+    });
+}
+
+/**
+ * Renders the appropriate chart type
+ * @param {Array} headers - Question headers
+ * @param {Array} counts - Answer counts
+ */
+function drawChart(headers, counts) {
+    const ctx = document.getElementById('myChart').getContext('2d');
+    
+    // Clear previous chart if exists
+    if (window.myChartInstance) {
+        window.myChartInstance.destroy();
+    }
+
+    const chartType = document.getElementById('chartType').value;
+    
+    if (chartType === 'bar') {
+        window.myChartInstance = createBarChart(ctx, headers, counts);
+    }
+    // Pie chart implementation will be added later
+}
+
 // File upload handling
 document.getElementById('fileInput').addEventListener('change', function(e) {
     const file = e.target.files[0];
@@ -83,12 +207,7 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
                 const text = event.target.result;
                 const { headers, data } = parseCSV(text);
                 const answerCounts = countAnswers(data, headers);
-                console.log('CSV data processed:', { 
-                    headers, 
-                    rowCount: data.length,
-                    answerCounts 
-                });
-                // Chart rendering function will be called here with headers and answerCounts
+                drawChart(headers, answerCounts);
             } catch (error) {
                 console.error('CSV processing error:', error);
                 alert('Error processing CSV file. Please check the file format.');
@@ -101,12 +220,7 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
                 const arrayBuffer = event.target.result;
                 const { headers, data } = parseXLSX(arrayBuffer);
                 const answerCounts = countAnswers(data, headers);
-                console.log('XLSX data processed:', { 
-                    headers, 
-                    rowCount: data.length,
-                    answerCounts 
-                });
-                // Chart rendering function will be called here with headers and answerCounts
+                drawChart(headers, answerCounts);
             } catch (error) {
                 console.error('XLSX processing error:', error);
                 alert('Error processing XLSX file. Please check the file format.');
@@ -115,5 +229,14 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
         reader.readAsArrayBuffer(file);
     } else {
         alert('Unsupported file format. Please select a CSV or XLSX file.');
+    }
+});
+
+// Chart type change handling
+document.getElementById('chartType').addEventListener('change', function() {
+    const fileInput = document.getElementById('fileInput');
+    if (fileInput.files.length > 0) {
+        // Trigger file processing again to redraw the chart
+        fileInput.dispatchEvent(new Event('change'));
     }
 }); 
