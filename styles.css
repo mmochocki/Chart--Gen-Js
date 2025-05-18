@@ -1,0 +1,66 @@
+body { 
+    font-family: Arial, sans-serif; 
+    margin: 40px; 
+    background-color: #f5f5f5;
+}
+
+#chart-container { 
+    width: 90vw; 
+    max-width: 1400px; 
+    background-color: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-top: 20px;
+    height: 800px;
+}
+
+h2 {
+    color: #333;
+}
+
+#fileInput {
+    padding: 10px;
+    margin: 10px 0;
+    border: 2px dashed #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.info {
+    color: #666;
+    margin: 10px 0;
+    font-size: 0.9em;
+}
+
+.controls {
+    margin: 20px 0;
+    padding: 15px;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.chart-type-selector {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.chart-type-selector label {
+    margin-right: 15px;
+    font-weight: bold;
+    color: #333;
+}
+
+select {
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+select:hover {
+    border-color: #666;
+} 
