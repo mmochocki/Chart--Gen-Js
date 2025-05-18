@@ -55,11 +55,21 @@ function countAnswers(data, headers) {
     // Count answers for each question
     data.forEach(row => {
         row.forEach((answer, columnIndex) => {
+            if (!answer) return; // Skip empty answers
+            
             const cleanAnswer = answer.toString().trim();
-            if (counts[columnIndex] && counts[columnIndex].hasOwnProperty(cleanAnswer)) {
+            if (options.includes(cleanAnswer) && columnIndex < counts.length) {
                 counts[columnIndex][cleanAnswer]++;
             }
         });
+    });
+
+    // Validate counts
+    counts.forEach((questionCounts, index) => {
+        const total = Object.values(questionCounts).reduce((sum, count) => sum + count, 0);
+        if (total === 0) {
+            console.warn(`Warning: No valid answers found for question ${index + 1}`);
+        }
     });
 
     return counts;
@@ -152,10 +162,10 @@ function createBarChart(ctx, headers, counts) {
                             const label = context.dataset.label;
                             const value = context.raw;
                             const total = context.chart.data.datasets.reduce(
-                                (sum, dataset) => sum + dataset.data[context.dataIndex],
+                                (sum, dataset) => sum + (dataset.data[context.dataIndex] || 0),
                                 0
                             );
-                            const percentage = ((value / total) * 100).toFixed(1);
+                            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
                             return `${label}: ${value} (${percentage}%)`;
                         }
                     }
