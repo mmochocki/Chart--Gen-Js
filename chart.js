@@ -285,12 +285,23 @@ function createPieChart(ctx, headers, counts) {
 }
 
 /**
- * Renders the appropriate chart type
+ * Stores the last loaded data to enable chart type switching without file reupload
+ */
+let lastLoadedData = {
+    headers: null,
+    counts: null
+};
+
+/**
+ * Renders the appropriate chart type with animation
  * @param {Array} headers - Question headers
  * @param {Array} counts - Answer counts
  */
 function drawChart(headers, counts) {
     const ctx = document.getElementById('myChart').getContext('2d');
+    
+    // Store data for later use
+    lastLoadedData = { headers, counts };
     
     // Clear previous chart if exists
     if (window.myChartInstance) {
@@ -299,10 +310,15 @@ function drawChart(headers, counts) {
 
     const chartType = document.getElementById('chartType').value;
     
-    if (chartType === 'bar') {
-        window.myChartInstance = createBarChart(ctx, headers, counts);
-    } else if (chartType === 'pie') {
-        window.myChartInstance = createPieChart(ctx, headers, counts);
+    try {
+        if (chartType === 'bar') {
+            window.myChartInstance = createBarChart(ctx, headers, counts);
+        } else if (chartType === 'pie') {
+            window.myChartInstance = createPieChart(ctx, headers, counts);
+        }
+    } catch (error) {
+        console.error('Error creating chart:', error);
+        alert('An error occurred while creating the chart. Please try again.');
     }
 }
 
@@ -310,6 +326,9 @@ function drawChart(headers, counts) {
 document.getElementById('fileInput').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
+
+    // Reset last loaded data
+    lastLoadedData = { headers: null, counts: null };
 
     const reader = new FileReader();
     
@@ -349,11 +368,18 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
     }
 });
 
-// Chart type change handling
+// Chart type change handling with animation
 document.getElementById('chartType').addEventListener('change', function() {
-    const fileInput = document.getElementById('fileInput');
-    if (fileInput.files.length > 0) {
-        // Trigger file processing again to redraw the chart
-        fileInput.dispatchEvent(new Event('change'));
+    if (lastLoadedData.headers && lastLoadedData.counts) {
+        // Use stored data to redraw chart
+        drawChart(lastLoadedData.headers, lastLoadedData.counts);
+    } else {
+        const fileInput = document.getElementById('fileInput');
+        if (fileInput.files.length > 0) {
+            // If no stored data but file is selected, trigger file processing
+            fileInput.dispatchEvent(new Event('change'));
+        } else {
+            console.warn('No data available to change chart type');
+        }
     }
 }); 
