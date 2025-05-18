@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Wykres z CSV/XLSX</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <h2>Wykres motywacji pracowników</h2>
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" />
+    <div class="info">Obsługiwane formaty: CSV, XLSX, XLS</div>
+    <div class="controls">
+        <div class="chart-type-selector">
+            <label for="chartType">Typ wykresu:</label>
+            <select id="chartType">
+                <option value="bar">Słupkowy</option>
+                <option value="pie">Kołowy</option>
+            </select>
+        </div>
+    </div>
+    <div id="chart-container">
+        <canvas id="myChart"></canvas>
+    </div>
+    <script src="wykres.js"></script>
+</body>
+</html> 
