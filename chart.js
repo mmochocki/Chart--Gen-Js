@@ -72,7 +72,7 @@ function parseXLSX(arrayBuffer) {
         const rawData = XLSX.utils.sheet_to_json(worksheet, {
             header: 1,
             defval: '',
-            raw: false // Konwertuj wszystkie wartości na string
+            raw: false
         });
 
         if (rawData.length < 2) {
@@ -92,27 +92,33 @@ function parseXLSX(arrayBuffer) {
         const data = rawData.slice(1)
             .filter(row => row.some(cell => cell && cell.toString().trim().length > 0))
             .map(row => {
-                const processedRow = row.map(cell => {
-                    const value = cell ? cell.toString().trim() : '';
-                    return normalizeAnswer(value);
-                });
-
-                // Upewnij się, że wiersz ma odpowiednią liczbę kolumn
+                const processedRow = row.map(cell => cell ? cell.toString().trim() : '');
                 while (processedRow.length < headers.length) {
                     processedRow.push('');
                 }
-
                 return processedRow;
             });
+
+        // Znajdź unikalne odpowiedzi dla każdej kolumny
+        const uniqueAnswers = new Map();
+        headers.forEach((header, colIndex) => {
+            const answers = new Set();
+            data.forEach(row => {
+                if (row[colIndex]) {
+                    answers.add(row[colIndex]);
+                }
+            });
+            uniqueAnswers.set(colIndex, Array.from(answers));
+        });
 
         console.log('XLSX Parse Results:', {
             headerCount: headers.length,
             headers: headers,
             rowCount: data.length,
-            sampleRow: data[0]
+            uniqueAnswers: Object.fromEntries(uniqueAnswers)
         });
 
-        return { headers, data };
+        return { headers, data, uniqueAnswers };
     } catch (error) {
         console.error('Error parsing XLSX:', error);
         throw error;
@@ -175,9 +181,10 @@ function normalizeAnswer(answer) {
  * Validates and processes input data
  * @param {Array} data - Raw data array
  * @param {Array} headers - Headers array
+ * @param {Map} uniqueAnswers - Map of unique answers
  * @returns {Object} Processed and validated data
  */
-function validateAndProcessData(data, headers) {
+function validateAndProcessData(data, headers, uniqueAnswers) {
     if (!Array.isArray(data) || !Array.isArray(headers)) {
         throw new Error('Nieprawidłowy format danych - oczekiwano tablic');
     }
@@ -196,29 +203,18 @@ function validateAndProcessData(data, headers) {
         throw new Error('Wszystkie nagłówki są puste');
     }
 
-    // Sprawdź format danych
-    const validOptions = [
-        "Highly motivating",
-        "Moderately motivating",
-        "Slightly motivating",
-        "Not motivating"
-    ];
-
-    let validAnswersFound = false;
-    data.forEach((row, rowIndex) => {
-        if (!Array.isArray(row)) {
-            throw new Error(`Wiersz ${rowIndex + 1} nie jest tablicą`);
-        }
-        
+    // Sprawdź czy są jakiekolwiek odpowiedzi
+    let hasAnyAnswers = false;
+    data.forEach(row => {
         row.forEach((answer, colIndex) => {
-            if (answer && validOptions.includes(answer.trim())) {
-                validAnswersFound = true;
+            if (answer && uniqueAnswers.get(colIndex).includes(answer.trim())) {
+                hasAnyAnswers = true;
             }
         });
     });
 
-    if (!validAnswersFound) {
-        throw new Error('Nie znaleziono żadnych prawidłowych odpowiedzi. Dozwolone odpowiedzi to: ' + validOptions.join(', '));
+    if (!hasAnyAnswers) {
+        throw new Error('Nie znaleziono żadnych odpowiedzi w pliku');
     }
 
     return {
@@ -231,31 +227,24 @@ function validateAndProcessData(data, headers) {
  * Counts answers for each question
  * @param {Array} data - Array of rows with answers
  * @param {Array} headers - Array of question headers
+ * @param {Map} uniqueAnswers - Map of unique answers for each question
  * @returns {Array} Array of objects with answer counts for each question
  */
-function countAnswers(data, headers) {
+function countAnswers(data, headers, uniqueAnswers) {
     console.log('Rozpoczynam liczenie odpowiedzi:', {
         liczbaWierszy: data.length,
         liczbaKolumn: headers.length
     });
 
-    const validOptions = [
-        "Highly motivating",
-        "Moderately motivating",
-        "Slightly motivating",
-        "Not motivating"
-    ];
-
-    // Inicjalizacja liczników
-    const counts = headers.map(() => ({
-        "Highly motivating": 0,
-        "Moderately motivating": 0,
-        "Slightly motivating": 0,
-        "Not motivating": 0
-    }));
-
-    let totalAnswers = 0;
-    let invalidAnswers = [];
+    // Inicjalizacja liczników dla każdej kolumny
+    const counts = headers.map((_, colIndex) => {
+        const answers = uniqueAnswers.get(colIndex);
+        const counter = {};
+        answers.forEach(answer => {
+            counter[answer] = 0;
+        });
+        return counter;
+    });
 
     // Zliczanie odpowiedzi
     data.forEach((row, rowIndex) => {
@@ -268,33 +257,22 @@ function countAnswers(data, headers) {
                 return;
             }
 
-            if (validOptions.includes(cleanAnswer)) {
+            if (counts[colIndex].hasOwnProperty(cleanAnswer)) {
                 counts[colIndex][cleanAnswer]++;
-                totalAnswers++;
             } else {
-                invalidAnswers.push({
-                    wiersz: rowIndex + 1,
-                    kolumna: colIndex + 1,
-                    wartość: cleanAnswer
-                });
+                console.warn(`Nieoczekiwana odpowiedź "${cleanAnswer}" w kolumnie ${colIndex + 1}`);
             }
         });
     });
 
     // Logowanie wyników
     console.log('Wyniki zliczania:', {
-        poprawneOdpowiedzi: totalAnswers,
-        nieprawidłoweOdpowiedzi: invalidAnswers.length,
-        przykładoweNieprawidłoweOdpowiedzi: invalidAnswers.slice(0, 5),
-        sumaOdpowiedziDlaPytań: counts.map((q, idx) => ({
-            pytanie: idx + 1,
-            suma: Object.values(q).reduce((a, b) => a + b, 0)
+        liczbaKolumn: counts.length,
+        przykładoweLiczniki: counts.map((counter, idx) => ({
+            kolumna: idx + 1,
+            odpowiedzi: counter
         }))
     });
-
-    if (totalAnswers === 0) {
-        throw new Error('Nie znaleziono żadnych prawidłowych odpowiedzi w pliku');
-    }
 
     return counts;
 }
@@ -307,13 +285,23 @@ function countAnswers(data, headers) {
  * @returns {Chart} Chart.js instance
  */
 function createBarChart(ctx, headers, counts) {
-    const options = [
-        "Highly motivating",
-        "Moderately motivating",
-        "Slightly motivating",
-        "Not motivating"
-    ];
-    const colors = ['#4caf50', '#ffeb3b', '#ff9800', '#f44336'];
+    // Przygotuj kolory dla wszystkich możliwych odpowiedzi
+    const generateColors = (count) => {
+        const baseColors = ['#4caf50', '#ffeb3b', '#ff9800', '#f44336', '#2196f3', '#9c27b0', '#795548'];
+        const colors = [];
+        for (let i = 0; i < count; i++) {
+            colors.push(baseColors[i % baseColors.length]);
+        }
+        return colors;
+    };
+
+    // Znajdź wszystkie unikalne odpowiedzi
+    const allAnswers = new Set();
+    counts.forEach(questionCounts => {
+        Object.keys(questionCounts).forEach(answer => allAnswers.add(answer));
+    });
+    const options = Array.from(allAnswers);
+    const colors = generateColors(options.length);
 
     // Przygotuj dane do wykresu
     const datasets = [];
@@ -651,28 +639,28 @@ document.getElementById('fileInput').addEventListener('change', async function(e
             typ: file.type
         });
 
-        let headers, data;
+        let headers, data, uniqueAnswers;
 
         if (file.name.toLowerCase().endsWith('.csv')) {
             const text = await file.text();
             console.log('Wczytano zawartość CSV:', text.substring(0, 200) + '...');
-            ({ headers, data } = parseCSV(text));
+            ({ headers, data, uniqueAnswers } = parseCSV(text));
         } else if (file.name.toLowerCase().match(/\.xlsx?$/)) {
             const arrayBuffer = await file.arrayBuffer();
-            ({ headers, data } = parseXLSX(arrayBuffer));
+            ({ headers, data, uniqueAnswers } = parseXLSX(arrayBuffer));
         } else {
             throw new Error('Nieobsługiwany format pliku. Wybierz plik CSV lub XLSX.');
         }
 
         // Walidacja i przetwarzanie danych
-        const validatedData = validateAndProcessData(data, headers);
+        const validatedData = validateAndProcessData(data, headers, uniqueAnswers);
         console.log('Dane po walidacji:', {
             liczbaWierszy: validatedData.data.length,
             liczbaKolumn: validatedData.headers.length,
             przykładowyWiersz: validatedData.data[0]
         });
 
-        const counts = countAnswers(validatedData.data, validatedData.headers);
+        const counts = countAnswers(validatedData.data, validatedData.headers, uniqueAnswers);
         
         // Sprawdź czy są jakieś dane do wyświetlenia
         const hasData = counts.some(questionCounts => 
@@ -683,7 +671,9 @@ document.getElementById('fileInput').addEventListener('change', async function(e
             throw new Error('Brak danych do wyświetlenia na wykresie');
         }
 
+        // Wyświetl wykres
         drawChart(validatedData.headers, counts);
+        
     } catch (error) {
         console.error('Szczegóły błędu:', error);
         alert('Błąd podczas przetwarzania pliku: ' + error.message);
