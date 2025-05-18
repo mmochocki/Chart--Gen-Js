@@ -348,14 +348,6 @@ function createBarChart(ctx, headers, counts) {
         return header.length > 30 ? header.substring(0, 27) + '...' : header;
     });
 
-    console.log('Chart Data:', {
-        labels: labels,
-        datasets: datasets.map(ds => ({
-            label: ds.label,
-            dataPoints: ds.data
-        }))
-    });
-
     return new Chart(ctx, {
         type: 'bar',
         data: {
@@ -403,7 +395,47 @@ function createBarChart(ctx, headers, counts) {
                     }
                 }
             }
-        }
+        },
+        plugins: [{
+            id: 'barLabels',
+            afterDatasetsDraw: function(chart) {
+                const ctx = chart.ctx;
+                
+                // Dla każdego wiersza danych
+                for (let index = 0; index < chart.data.labels.length; index++) {
+                    let xStart = chart.scales.x.left;
+                    let y = chart.getDatasetMeta(0).data[index].y;
+                    
+                    // Dla każdego zbioru danych w wierszu
+                    for (let datasetIndex = 0; datasetIndex < chart.data.datasets.length; datasetIndex++) {
+                        const value = chart.data.datasets[datasetIndex].data[index];
+                        
+                        if (value > 0) {
+                            const meta = chart.getDatasetMeta(datasetIndex);
+                            const bar = meta.data[index];
+                            
+                            // Oblicz szerokość segmentu
+                            const barWidth = bar.x - xStart;
+                            
+                            // Oblicz środek segmentu
+                            const xCenter = xStart + (barWidth / 2);
+                            
+                            // Ustaw styl tekstu
+                            ctx.fillStyle = '#000000';
+                            ctx.font = 'bold 12px Arial';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            
+                            // Wyświetl wartość
+                            ctx.fillText(value.toString(), xCenter, y);
+                            
+                            // Aktualizuj pozycję startową dla następnego segmentu
+                            xStart = bar.x;
+                        }
+                    }
+                }
+            }
+        }]
     });
 }
 
