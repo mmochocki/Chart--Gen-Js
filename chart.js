@@ -4,12 +4,57 @@
  * @returns {Object} Object containing headers and data
  */
 function parseCSV(text) {
-    const lines = text.trim().split('\n');
-    const headers = lines[0].split(',').map(header => header.trim());
-    const data = lines.slice(1).map(line => 
-        line.split(',').map(cell => cell.trim())
-    );
-    return { headers, data };
+    try {
+        // Normalizacja końców linii i usunięcie pustych linii
+        const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+            .split('\n')
+            .filter(line => line.trim().length > 0);
+
+        if (lines.length < 2) {
+            throw new Error('CSV file must contain at least headers and one row of data');
+        }
+
+        // Przetwarzanie nagłówków
+        const headers = lines[0].split(',')
+            .map(header => header.trim())
+            .filter(header => header.length > 0);
+
+        if (headers.length === 0) {
+            throw new Error('No valid headers found in CSV file');
+        }
+
+        // Przetwarzanie danych
+        const data = [];
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.trim().length === 0) continue;
+
+            const values = line.split(',').map(value => {
+                // Usuń cudzysłowy i białe znaki
+                value = value.trim().replace(/^["']|["']$/g, '');
+                return normalizeAnswer(value);
+            });
+
+            // Upewnij się, że wiersz ma odpowiednią liczbę kolumn
+            while (values.length < headers.length) {
+                values.push('');
+            }
+
+            data.push(values);
+        }
+
+        console.log('CSV Parse Results:', {
+            headerCount: headers.length,
+            headers: headers,
+            rowCount: data.length,
+            sampleRow: data[0]
+        });
+
+        return { headers, data };
+    } catch (error) {
+        console.error('Error parsing CSV:', error);
+        throw error;
+    }
 }
 
 /**
@@ -18,15 +63,168 @@ function parseCSV(text) {
  * @returns {Object} Object containing headers and data
  */
 function parseXLSX(arrayBuffer) {
-    const workbook = XLSX.read(arrayBuffer);
-    const firstSheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[firstSheetName];
-    const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-    const headers = data[0].map(header => header.trim());
-    const rows = data.slice(1).map(row => 
-        row.map(cell => cell ? cell.toString().trim() : '')
-    );
-    return { headers, data: rows };
+    try {
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+
+        // Konwertuj do tablicy z opcjami
+        const rawData = XLSX.utils.sheet_to_json(worksheet, {
+            header: 1,
+            defval: '',
+            raw: false // Konwertuj wszystkie wartości na string
+        });
+
+        if (rawData.length < 2) {
+            throw new Error('XLSX file must contain at least headers and one row of data');
+        }
+
+        // Przetwarzanie nagłówków
+        const headers = rawData[0]
+            .map(header => header ? header.toString().trim() : '')
+            .filter(header => header.length > 0);
+
+        if (headers.length === 0) {
+            throw new Error('No valid headers found in XLSX file');
+        }
+
+        // Przetwarzanie danych
+        const data = rawData.slice(1)
+            .filter(row => row.some(cell => cell && cell.toString().trim().length > 0))
+            .map(row => {
+                const processedRow = row.map(cell => {
+                    const value = cell ? cell.toString().trim() : '';
+                    return normalizeAnswer(value);
+                });
+
+                // Upewnij się, że wiersz ma odpowiednią liczbę kolumn
+                while (processedRow.length < headers.length) {
+                    processedRow.push('');
+                }
+
+                return processedRow;
+            });
+
+        console.log('XLSX Parse Results:', {
+            headerCount: headers.length,
+            headers: headers,
+            rowCount: data.length,
+            sampleRow: data[0]
+        });
+
+        return { headers, data };
+    } catch (error) {
+        console.error('Error parsing XLSX:', error);
+        throw error;
+    }
+}
+
+/**
+ * Normalizes answer values to match expected format
+ * @param {string} answer - Raw answer value
+ * @returns {string} Normalized answer
+ */
+function normalizeAnswer(answer) {
+    if (!answer) return '';
+    
+    // Usuń zbędne białe znaki i zamień na string
+    answer = answer.toString().trim();
+    
+    // Mapowanie możliwych wartości na standardowe odpowiedzi
+    const answerMap = {
+        // Angielskie odpowiedzi
+        'highly motivating': 'Highly motivating',
+        'moderately motivating': 'Moderately motivating',
+        'slightly motivating': 'Slightly motivating',
+        'not motivating': 'Not motivating',
+        'high': 'Highly motivating',
+        'moderate': 'Moderately motivating',
+        'slight': 'Slightly motivating',
+        'none': 'Not motivating',
+        
+        // Polskie odpowiedzi
+        'bardzo motywuje': 'Highly motivating',
+        'średnio motywuje': 'Moderately motivating',
+        'słabo motywuje': 'Slightly motivating',
+        'nie motywuje': 'Not motivating'
+    };
+
+    // Sprawdź czy odpowiedź pasuje do któregoś z wariantów
+    const lowerAnswer = answer.toLowerCase();
+    if (answerMap.hasOwnProperty(lowerAnswer)) {
+        return answerMap[lowerAnswer];
+    }
+
+    // Jeśli odpowiedź jest dokładnie jedną z dozwolonych wartości
+    const validAnswers = [
+        "Highly motivating",
+        "Moderately motivating",
+        "Slightly motivating",
+        "Not motivating"
+    ];
+
+    if (validAnswers.includes(answer)) {
+        return answer;
+    }
+
+    console.warn(`Unrecognized answer value: "${answer}"`);
+    return answer;
+}
+
+/**
+ * Validates and processes input data
+ * @param {Array} data - Raw data array
+ * @param {Array} headers - Headers array
+ * @returns {Object} Processed and validated data
+ */
+function validateAndProcessData(data, headers) {
+    if (!Array.isArray(data) || !Array.isArray(headers)) {
+        throw new Error('Nieprawidłowy format danych - oczekiwano tablic');
+    }
+
+    if (headers.length === 0) {
+        throw new Error('Brak nagłówków w pliku');
+    }
+
+    if (data.length === 0) {
+        throw new Error('Brak danych w pliku');
+    }
+
+    // Sprawdź czy wszystkie nagłówki są niepuste
+    const validHeaders = headers.filter(h => h && h.trim().length > 0);
+    if (validHeaders.length === 0) {
+        throw new Error('Wszystkie nagłówki są puste');
+    }
+
+    // Sprawdź format danych
+    const validOptions = [
+        "Highly motivating",
+        "Moderately motivating",
+        "Slightly motivating",
+        "Not motivating"
+    ];
+
+    let validAnswersFound = false;
+    data.forEach((row, rowIndex) => {
+        if (!Array.isArray(row)) {
+            throw new Error(`Wiersz ${rowIndex + 1} nie jest tablicą`);
+        }
+        
+        row.forEach((answer, colIndex) => {
+            if (answer && validOptions.includes(answer.trim())) {
+                validAnswersFound = true;
+            }
+        });
+    });
+
+    if (!validAnswersFound) {
+        throw new Error('Nie znaleziono żadnych prawidłowych odpowiedzi. Dozwolone odpowiedzi to: ' + validOptions.join(', '));
+    }
+
+    return {
+        headers: validHeaders,
+        data: data
+    };
 }
 
 /**
@@ -36,15 +234,19 @@ function parseXLSX(arrayBuffer) {
  * @returns {Array} Array of objects with answer counts for each question
  */
 function countAnswers(data, headers) {
-    // Possible answer options
-    const options = [
+    console.log('Rozpoczynam liczenie odpowiedzi:', {
+        liczbaWierszy: data.length,
+        liczbaKolumn: headers.length
+    });
+
+    const validOptions = [
         "Highly motivating",
         "Moderately motivating",
         "Slightly motivating",
         "Not motivating"
     ];
-    
-    // Initialize counters for each question
+
+    // Inicjalizacja liczników
     const counts = headers.map(() => ({
         "Highly motivating": 0,
         "Moderately motivating": 0,
@@ -52,25 +254,47 @@ function countAnswers(data, headers) {
         "Not motivating": 0
     }));
 
-    // Count answers for each question
-    data.forEach(row => {
-        row.forEach((answer, columnIndex) => {
-            if (!answer) return; // Skip empty answers
-            
-            const cleanAnswer = answer.toString().trim();
-            if (options.includes(cleanAnswer) && columnIndex < counts.length) {
-                counts[columnIndex][cleanAnswer]++;
+    let totalAnswers = 0;
+    let invalidAnswers = [];
+
+    // Zliczanie odpowiedzi
+    data.forEach((row, rowIndex) => {
+        row.forEach((answer, colIndex) => {
+            if (colIndex >= headers.length) return;
+
+            const cleanAnswer = answer ? answer.toString().trim() : '';
+            if (!cleanAnswer) {
+                console.log(`Pusta odpowiedź w wierszu ${rowIndex + 1}, kolumnie ${colIndex + 1}`);
+                return;
+            }
+
+            if (validOptions.includes(cleanAnswer)) {
+                counts[colIndex][cleanAnswer]++;
+                totalAnswers++;
+            } else {
+                invalidAnswers.push({
+                    wiersz: rowIndex + 1,
+                    kolumna: colIndex + 1,
+                    wartość: cleanAnswer
+                });
             }
         });
     });
 
-    // Validate counts
-    counts.forEach((questionCounts, index) => {
-        const total = Object.values(questionCounts).reduce((sum, count) => sum + count, 0);
-        if (total === 0) {
-            console.warn(`Warning: No valid answers found for question ${index + 1}`);
-        }
+    // Logowanie wyników
+    console.log('Wyniki zliczania:', {
+        poprawneOdpowiedzi: totalAnswers,
+        nieprawidłoweOdpowiedzi: invalidAnswers.length,
+        przykładoweNieprawidłoweOdpowiedzi: invalidAnswers.slice(0, 5),
+        sumaOdpowiedziDlaPytań: counts.map((q, idx) => ({
+            pytanie: idx + 1,
+            suma: Object.values(q).reduce((a, b) => a + b, 0)
+        }))
     });
+
+    if (totalAnswers === 0) {
+        throw new Error('Nie znaleziono żadnych prawidłowych odpowiedzi w pliku');
+    }
 
     return counts;
 }
@@ -91,158 +315,95 @@ function createBarChart(ctx, headers, counts) {
     ];
     const colors = ['#4caf50', '#ffeb3b', '#ff9800', '#f44336'];
 
-    const datasets = options.map((option, idx) => ({
-        label: option,
-        data: counts.map(c => c[option]),
-        backgroundColor: colors[idx],
-        borderColor: colors[idx],
-        borderWidth: 1,
-        hoverBackgroundColor: colors[idx] + 'dd',
-        hoverBorderColor: colors[idx],
-        hoverBorderWidth: 2
-    }));
+    // Przygotuj dane do wykresu
+    const datasets = [];
+    options.forEach((option, idx) => {
+        const data = [];
+        counts.forEach(questionCount => {
+            data.push(questionCount[option] || 0);
+        });
+        
+        datasets.push({
+            label: option,
+            data: data,
+            backgroundColor: colors[idx],
+            borderColor: colors[idx],
+            borderWidth: 1
+        });
+    });
+
+    // Sprawdź czy są jakieś dane
+    const hasData = datasets.some(dataset => 
+        dataset.data.some(value => value > 0)
+    );
+
+    if (!hasData) {
+        console.error('No data available for chart');
+        return null;
+    }
+
+    // Przygotuj etykiety
+    const labels = headers.map(header => {
+        if (!header) return 'Unnamed Question';
+        return header.length > 30 ? header.substring(0, 27) + '...' : header;
+    });
+
+    console.log('Chart Data:', {
+        labels: labels,
+        datasets: datasets.map(ds => ({
+            label: ds.label,
+            dataPoints: ds.data
+        }))
+    });
 
     return new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: headers.map(header => 
-                header.length > 30 ? header.substring(0, 27) + '...' : header
-            ),
+            labels: labels,
             datasets: datasets
         },
         options: {
             indexAxis: 'y',
             responsive: true,
             maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false
+            scales: {
+                x: {
+                    stacked: true,
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(0,0,0,0.1)'
+                    }
+                },
+                y: {
+                    stacked: true,
+                    grid: {
+                        color: 'rgba(0,0,0,0.1)'
+                    }
+                }
             },
             plugins: {
-                legend: { 
+                legend: {
                     position: 'right',
-                    labels: { 
-                        padding: 20,
-                        generateLabels: function(chart) {
-                            const datasets = chart.data.datasets;
-                            return datasets.map((dataset, i) => ({
-                                text: dataset.label,
-                                fillStyle: dataset.backgroundColor,
-                                strokeStyle: dataset.borderColor,
-                                lineWidth: dataset.borderWidth,
-                                hidden: !chart.isDatasetVisible(i),
-                                index: i
-                            }));
-                        }
-                    },
-                    onClick: function(e, legendItem, legend) {
-                        const index = legendItem.index;
-                        const chart = legend.chart;
-                        chart.setDatasetVisibility(index, !chart.isDatasetVisible(index));
-                        chart.update('show');
+                    labels: {
+                        padding: 20
                     }
-                },
-                title: { 
-                    display: true, 
-                    text: 'Employee Motivation Factors',
-                    padding: 20,
-                    font: { size: 16 }
                 },
                 tooltip: {
-                    enabled: true,
-                    backgroundColor: 'rgba(0,0,0,0.8)',
-                    titleFont: { size: 14 },
-                    bodyFont: { size: 13 },
-                    padding: 12,
+                    mode: 'index',
+                    intersect: false,
                     callbacks: {
-                        title: function(tooltipItems) {
-                            return tooltipItems[0].label;
-                        },
                         label: function(context) {
-                            const label = context.dataset.label;
-                            const value = context.raw;
-                            const total = context.chart.data.datasets.reduce(
-                                (sum, dataset) => sum + (dataset.data[context.dataIndex] || 0),
-                                0
+                            const value = context.raw || 0;
+                            const total = context.chart.data.datasets.reduce((sum, dataset) => 
+                                sum + (dataset.data[context.dataIndex] || 0), 0
                             );
-                            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
-                            return `${label}: ${value} (${percentage}%)`;
+                            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                            return `${context.dataset.label}: ${value} (${percentage}%)`;
                         }
                     }
                 }
-            },
-            scales: {
-                x: { 
-                    stacked: true,
-                    position: 'top',
-                    ticks: {
-                        beginAtZero: true,
-                        stepSize: 1
-                    },
-                    grid: {
-                        color: 'rgba(0,0,0,0.1)'
-                    }
-                },
-                y: { 
-                    stacked: true,
-                    ticks: {
-                        autoSkip: false,
-                        maxRotation: 0,
-                        minRotation: 0
-                    },
-                    grid: {
-                        color: 'rgba(0,0,0,0.1)'
-                    }
-                }
-            },
-            animation: {
-                duration: 750,
-                easing: 'easeInOutQuart'
             }
-        },
-        plugins: [{
-            id: 'customLabels',
-            afterDatasetsDraw: function(chart) {
-                const ctx = chart.ctx;
-                ctx.save();
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.font = 'bold 12px Arial';
-                ctx.fillStyle = 'white';
-
-                const meta = chart.getDatasetMeta(0);
-                meta.data.forEach((_, index) => {
-                    let xStart = chart.chartArea.left;
-                    const y = chart.getDatasetMeta(0).data[index].y;
-
-                    let totalValue = 0;
-                    chart.data.datasets.forEach((dataset, datasetIndex) => {
-                        if (chart.isDatasetVisible(datasetIndex)) {
-                            const value = dataset.data[index];
-                            if (value > 0) {
-                                const barElement = chart.getDatasetMeta(datasetIndex).data[index];
-                                const barWidth = barElement.width;
-                                const xCenter = xStart + (barWidth / 2);
-                                
-                                if (barWidth > 25) {
-                                    ctx.fillText(value.toString(), xCenter, y);
-                                }
-                                xStart += barWidth;
-                                totalValue += value;
-                            }
-                        }
-                    });
-
-                    // Add total value at the end if there's enough space
-                    if (chart.chartArea.right - xStart > 40) {
-                        ctx.fillStyle = '#333';
-                        ctx.fillText(`Total: ${totalValue}`, xStart + 30, y);
-                    }
-                });
-
-                ctx.restore();
-            }
-        }]
+        }
     });
 }
 
@@ -402,73 +563,98 @@ let lastLoadedData = {
  * @param {Array} counts - Answer counts
  */
 function drawChart(headers, counts) {
-    const ctx = document.getElementById('myChart').getContext('2d');
+    if (!headers || !counts || headers.length === 0 || counts.length === 0) {
+        console.error('Invalid data for chart:', { headers, counts });
+        alert('Nie można utworzyć wykresu - brak poprawnych danych.');
+        return;
+    }
+
+    console.log('Drawing chart with:', {
+        headerCount: headers.length,
+        countsLength: counts.length,
+        headers: headers,
+        counts: counts
+    });
+
+    const canvas = document.getElementById('myChart');
+    if (!canvas) {
+        console.error('Canvas element not found');
+        return;
+    }
+
+    const ctx = canvas.getContext('2d');
     
-    // Store data for later use
-    lastLoadedData = { headers, counts };
-    
-    // Clear previous chart if exists
+    // Zniszcz poprzedni wykres jeśli istnieje
     if (window.myChartInstance) {
         window.myChartInstance.destroy();
     }
 
-    const chartType = document.getElementById('chartType').value;
-    
     try {
+        const chartType = document.getElementById('chartType').value;
+        
         if (chartType === 'bar') {
             window.myChartInstance = createBarChart(ctx, headers, counts);
         } else if (chartType === 'pie') {
             window.myChartInstance = createPieChart(ctx, headers, counts);
         }
+
+        if (!window.myChartInstance) {
+            throw new Error('Failed to create chart instance');
+        }
     } catch (error) {
         console.error('Error creating chart:', error);
-        alert('An error occurred while creating the chart. Please try again.');
+        alert('Wystąpił błąd podczas tworzenia wykresu. Sprawdź dane wejściowe.');
     }
 }
 
-// File upload handling
-document.getElementById('fileInput').addEventListener('change', function(e) {
+// Obsługa wczytywania pliku
+document.getElementById('fileInput').addEventListener('change', async function(e) {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Reset last loaded data
-    lastLoadedData = { headers: null, counts: null };
+    try {
+        console.log('Rozpoczynam przetwarzanie pliku:', {
+            nazwa: file.name,
+            rozmiar: file.size,
+            typ: file.type
+        });
 
-    const reader = new FileReader();
-    
-    reader.onerror = function() {
-        console.error('Error loading file');
-        alert('An error occurred while loading the file. Please try again.');
-    };
+        let headers, data;
 
-    if (file.name.toLowerCase().endsWith('.csv')) {
-        reader.onload = function(event) {
-            try {
-                const text = event.target.result;
-                const { headers, data } = parseCSV(text);
-                const answerCounts = countAnswers(data, headers);
-                drawChart(headers, answerCounts);
-            } catch (error) {
-                console.error('CSV processing error:', error);
-                alert('Error processing CSV file. Please check the file format.');
-            }
-        };
-        reader.readAsText(file);
-    } else if (file.name.toLowerCase().match(/\.xlsx?$/)) {
-        reader.onload = function(event) {
-            try {
-                const arrayBuffer = event.target.result;
-                const { headers, data } = parseXLSX(arrayBuffer);
-                const answerCounts = countAnswers(data, headers);
-                drawChart(headers, answerCounts);
-            } catch (error) {
-                console.error('XLSX processing error:', error);
-                alert('Error processing XLSX file. Please check the file format.');
-            }
-        };
-        reader.readAsArrayBuffer(file);
-    } else {
-        alert('Unsupported file format. Please select a CSV or XLSX file.');
+        if (file.name.toLowerCase().endsWith('.csv')) {
+            const text = await file.text();
+            console.log('Wczytano zawartość CSV:', text.substring(0, 200) + '...');
+            ({ headers, data } = parseCSV(text));
+        } else if (file.name.toLowerCase().match(/\.xlsx?$/)) {
+            const arrayBuffer = await file.arrayBuffer();
+            ({ headers, data } = parseXLSX(arrayBuffer));
+        } else {
+            throw new Error('Nieobsługiwany format pliku. Wybierz plik CSV lub XLSX.');
+        }
+
+        // Walidacja i przetwarzanie danych
+        const validatedData = validateAndProcessData(data, headers);
+        console.log('Dane po walidacji:', {
+            liczbaWierszy: validatedData.data.length,
+            liczbaKolumn: validatedData.headers.length,
+            przykładowyWiersz: validatedData.data[0]
+        });
+
+        const counts = countAnswers(validatedData.data, validatedData.headers);
+        
+        // Sprawdź czy są jakieś dane do wyświetlenia
+        const hasData = counts.some(questionCounts => 
+            Object.values(questionCounts).some(count => count > 0)
+        );
+
+        if (!hasData) {
+            throw new Error('Brak danych do wyświetlenia na wykresie');
+        }
+
+        drawChart(validatedData.headers, counts);
+    } catch (error) {
+        console.error('Szczegóły błędu:', error);
+        alert('Błąd podczas przetwarzania pliku: ' + error.message);
     }
 });
 
