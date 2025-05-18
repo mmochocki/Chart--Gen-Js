@@ -169,6 +169,122 @@ function createBarChart(ctx, headers, counts) {
 }
 
 /**
+ * Creates a pie chart visualization
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ * @param {Array} headers - Question headers
+ * @param {Array} counts - Answer counts for each question
+ * @returns {Chart} Chart.js instance
+ */
+function createPieChart(ctx, headers, counts) {
+    const options = [
+        "Highly motivating",
+        "Moderately motivating",
+        "Slightly motivating",
+        "Not motivating"
+    ];
+    const colors = ['#4caf50', '#ffeb3b', '#ff9800', '#f44336'];
+    
+    // Calculate totals for each answer option
+    const totals = options.map(option => 
+        counts.reduce((sum, count) => sum + count[option], 0)
+    );
+
+    // Calculate total responses
+    const totalResponses = totals.reduce((a, b) => a + b, 0);
+
+    return new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: options,
+            datasets: [{
+                data: totals,
+                backgroundColor: colors,
+                borderColor: colors.map(color => color),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: {
+                        padding: 20,
+                        generateLabels: function(chart) {
+                            const data = chart.data;
+                            if (data.labels.length && data.datasets.length) {
+                                return data.labels.map((label, i) => {
+                                    const value = data.datasets[0].data[i];
+                                    const percentage = ((value / totalResponses) * 100).toFixed(1);
+                                    return {
+                                        text: `${label}: ${value} (${percentage}%)`,
+                                        fillStyle: data.datasets[0].backgroundColor[i],
+                                        strokeStyle: data.datasets[0].borderColor[i],
+                                        lineWidth: 1,
+                                        hidden: isNaN(data.datasets[0].data[i]) || data.datasets[0].data[i] === 0,
+                                        index: i
+                                    };
+                                });
+                            }
+                            return [];
+                        }
+                    }
+                },
+                title: {
+                    display: true,
+                    text: 'Overall Response Distribution',
+                    padding: 20,
+                    font: { size: 16 }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.raw;
+                            const percentage = ((value / totalResponses) * 100).toFixed(1);
+                            return `${context.label}: ${value} responses (${percentage}%)`;
+                        }
+                    }
+                }
+            }
+        },
+        plugins: [{
+            id: 'pieChartLabels',
+            afterDraw: function(chart) {
+                const ctx = chart.ctx;
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.font = 'bold 14px Arial';
+                ctx.fillStyle = 'white';
+
+                const total = chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+
+                chart.data.datasets[0].data.forEach((value, i) => {
+                    if (value === 0) return;
+
+                    const percentage = ((value / total) * 100).toFixed(1);
+                    const meta = chart.getDatasetMeta(0);
+                    const arc = meta.data[i];
+                    
+                    // Only show label if segment is large enough
+                    if (percentage > 5) {
+                        const angle = arc.startAngle + (arc.endAngle - arc.startAngle) / 2;
+                        const radius = arc.outerRadius * 0.6;
+                        const x = arc.x + Math.cos(angle) * radius;
+                        const y = arc.y + Math.sin(angle) * radius;
+                        
+                        ctx.fillText(`${percentage}%`, x, y);
+                    }
+                });
+
+                ctx.restore();
+            }
+        }]
+    });
+}
+
+/**
  * Renders the appropriate chart type
  * @param {Array} headers - Question headers
  * @param {Array} counts - Answer counts
@@ -185,8 +301,9 @@ function drawChart(headers, counts) {
     
     if (chartType === 'bar') {
         window.myChartInstance = createBarChart(ctx, headers, counts);
+    } else if (chartType === 'pie') {
+        window.myChartInstance = createPieChart(ctx, headers, counts);
     }
-    // Pie chart implementation will be added later
 }
 
 // File upload handling
