@@ -86,7 +86,10 @@ function createBarChart(ctx, headers, counts) {
         data: counts.map(c => c[option]),
         backgroundColor: colors[idx],
         borderColor: colors[idx],
-        borderWidth: 1
+        borderWidth: 1,
+        hoverBackgroundColor: colors[idx] + 'dd',
+        hoverBorderColor: colors[idx],
+        hoverBorderWidth: 2
     }));
 
     return new Chart(ctx, {
@@ -101,16 +104,61 @@ function createBarChart(ctx, headers, counts) {
             indexAxis: 'y',
             responsive: true,
             maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
             plugins: {
                 legend: { 
                     position: 'right',
-                    labels: { padding: 20 }
+                    labels: { 
+                        padding: 20,
+                        generateLabels: function(chart) {
+                            const datasets = chart.data.datasets;
+                            return datasets.map((dataset, i) => ({
+                                text: dataset.label,
+                                fillStyle: dataset.backgroundColor,
+                                strokeStyle: dataset.borderColor,
+                                lineWidth: dataset.borderWidth,
+                                hidden: !chart.isDatasetVisible(i),
+                                index: i
+                            }));
+                        }
+                    },
+                    onClick: function(e, legendItem, legend) {
+                        const index = legendItem.index;
+                        const chart = legend.chart;
+                        chart.setDatasetVisibility(index, !chart.isDatasetVisible(index));
+                        chart.update('show');
+                    }
                 },
                 title: { 
                     display: true, 
                     text: 'Employee Motivation Factors',
                     padding: 20,
                     font: { size: 16 }
+                },
+                tooltip: {
+                    enabled: true,
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    titleFont: { size: 14 },
+                    bodyFont: { size: 13 },
+                    padding: 12,
+                    callbacks: {
+                        title: function(tooltipItems) {
+                            return tooltipItems[0].label;
+                        },
+                        label: function(context) {
+                            const label = context.dataset.label;
+                            const value = context.raw;
+                            const total = context.chart.data.datasets.reduce(
+                                (sum, dataset) => sum + dataset.data[context.dataIndex],
+                                0
+                            );
+                            const percentage = ((value / total) * 100).toFixed(1);
+                            return `${label}: ${value} (${percentage}%)`;
+                        }
+                    }
                 }
             },
             scales: {
@@ -120,6 +168,9 @@ function createBarChart(ctx, headers, counts) {
                     ticks: {
                         beginAtZero: true,
                         stepSize: 1
+                    },
+                    grid: {
+                        color: 'rgba(0,0,0,0.1)'
                     }
                 },
                 y: { 
@@ -128,8 +179,15 @@ function createBarChart(ctx, headers, counts) {
                         autoSkip: false,
                         maxRotation: 0,
                         minRotation: 0
+                    },
+                    grid: {
+                        color: 'rgba(0,0,0,0.1)'
                     }
                 }
+            },
+            animation: {
+                duration: 750,
+                easing: 'easeInOutQuart'
             }
         },
         plugins: [{
@@ -147,19 +205,29 @@ function createBarChart(ctx, headers, counts) {
                     let xStart = chart.chartArea.left;
                     const y = chart.getDatasetMeta(0).data[index].y;
 
+                    let totalValue = 0;
                     chart.data.datasets.forEach((dataset, datasetIndex) => {
-                        const value = dataset.data[index];
-                        if (value > 0) {
-                            const barElement = chart.getDatasetMeta(datasetIndex).data[index];
-                            const barWidth = barElement.width;
-                            const xCenter = xStart + (barWidth / 2);
-                            
-                            if (barWidth > 25) {
-                                ctx.fillText(value.toString(), xCenter, y);
+                        if (chart.isDatasetVisible(datasetIndex)) {
+                            const value = dataset.data[index];
+                            if (value > 0) {
+                                const barElement = chart.getDatasetMeta(datasetIndex).data[index];
+                                const barWidth = barElement.width;
+                                const xCenter = xStart + (barWidth / 2);
+                                
+                                if (barWidth > 25) {
+                                    ctx.fillText(value.toString(), xCenter, y);
+                                }
+                                xStart += barWidth;
+                                totalValue += value;
                             }
-                            xStart += barWidth;
                         }
                     });
+
+                    // Add total value at the end if there's enough space
+                    if (chart.chartArea.right - xStart > 40) {
+                        ctx.fillStyle = '#333';
+                        ctx.fillText(`Total: ${totalValue}`, xStart + 30, y);
+                    }
                 });
 
                 ctx.restore();
@@ -184,12 +252,10 @@ function createPieChart(ctx, headers, counts) {
     ];
     const colors = ['#4caf50', '#ffeb3b', '#ff9800', '#f44336'];
     
-    // Calculate totals for each answer option
     const totals = options.map(option => 
         counts.reduce((sum, count) => sum + count[option], 0)
     );
 
-    // Calculate total responses
     const totalResponses = totals.reduce((a, b) => a + b, 0);
 
     return new Chart(ctx, {
@@ -200,7 +266,11 @@ function createPieChart(ctx, headers, counts) {
                 data: totals,
                 backgroundColor: colors,
                 borderColor: colors.map(color => color),
-                borderWidth: 1
+                borderWidth: 1,
+                hoverBackgroundColor: colors.map(color => color + 'dd'),
+                hoverBorderColor: colors,
+                hoverBorderWidth: 2,
+                hoverOffset: 10
             }]
         },
         options: {
@@ -229,6 +299,13 @@ function createPieChart(ctx, headers, counts) {
                             }
                             return [];
                         }
+                    },
+                    onClick: function(e, legendItem, legend) {
+                        const index = legendItem.index;
+                        const chart = legend.chart;
+                        const meta = chart.getDatasetMeta(0);
+                        meta.data[index].hidden = !meta.data[index].hidden;
+                        chart.update();
                     }
                 },
                 title: {
@@ -238,14 +315,28 @@ function createPieChart(ctx, headers, counts) {
                     font: { size: 16 }
                 },
                 tooltip: {
+                    enabled: true,
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    titleFont: { size: 14 },
+                    bodyFont: { size: 13 },
+                    padding: 12,
                     callbacks: {
                         label: function(context) {
                             const value = context.raw;
                             const percentage = ((value / totalResponses) * 100).toFixed(1);
-                            return `${context.label}: ${value} responses (${percentage}%)`;
+                            return [
+                                `${context.label}:`,
+                                `${value} responses (${percentage}%)`
+                            ];
                         }
                     }
                 }
+            },
+            animation: {
+                animateRotate: true,
+                animateScale: true,
+                duration: 750,
+                easing: 'easeInOutQuart'
             }
         },
         plugins: [{
@@ -261,20 +352,23 @@ function createPieChart(ctx, headers, counts) {
                 const total = chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
 
                 chart.data.datasets[0].data.forEach((value, i) => {
-                    if (value === 0) return;
+                    if (value === 0 || chart.getDatasetMeta(0).data[i].hidden) return;
 
                     const percentage = ((value / total) * 100).toFixed(1);
                     const meta = chart.getDatasetMeta(0);
                     const arc = meta.data[i];
                     
-                    // Only show label if segment is large enough
                     if (percentage > 5) {
                         const angle = arc.startAngle + (arc.endAngle - arc.startAngle) / 2;
                         const radius = arc.outerRadius * 0.6;
                         const x = arc.x + Math.cos(angle) * radius;
                         const y = arc.y + Math.sin(angle) * radius;
                         
+                        // Add shadow effect for better readability
+                        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+                        ctx.shadowBlur = 2;
                         ctx.fillText(`${percentage}%`, x, y);
+                        ctx.shadowBlur = 0;
                     }
                 });
 
