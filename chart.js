@@ -29,6 +29,42 @@ function parseXLSX(arrayBuffer) {
     return { headers, data: rows };
 }
 
+/**
+ * Counts answers for each question
+ * @param {Array} data - Array of rows with answers
+ * @param {Array} headers - Array of question headers
+ * @returns {Array} Array of objects with answer counts for each question
+ */
+function countAnswers(data, headers) {
+    // Possible answer options
+    const options = [
+        "Highly motivating",
+        "Moderately motivating",
+        "Slightly motivating",
+        "Not motivating"
+    ];
+    
+    // Initialize counters for each question
+    const counts = headers.map(() => ({
+        "Highly motivating": 0,
+        "Moderately motivating": 0,
+        "Slightly motivating": 0,
+        "Not motivating": 0
+    }));
+
+    // Count answers for each question
+    data.forEach(row => {
+        row.forEach((answer, columnIndex) => {
+            const cleanAnswer = answer.toString().trim();
+            if (counts[columnIndex] && counts[columnIndex].hasOwnProperty(cleanAnswer)) {
+                counts[columnIndex][cleanAnswer]++;
+            }
+        });
+    });
+
+    return counts;
+}
+
 // File upload handling
 document.getElementById('fileInput').addEventListener('change', function(e) {
     const file = e.target.files[0];
@@ -46,11 +82,16 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
             try {
                 const text = event.target.result;
                 const { headers, data } = parseCSV(text);
-                console.log('CSV data loaded:', { headers, rowCount: data.length });
-                // Chart rendering function will be called here
+                const answerCounts = countAnswers(data, headers);
+                console.log('CSV data processed:', { 
+                    headers, 
+                    rowCount: data.length,
+                    answerCounts 
+                });
+                // Chart rendering function will be called here with headers and answerCounts
             } catch (error) {
-                console.error('CSV parsing error:', error);
-                alert('Error parsing CSV file. Please check the file format.');
+                console.error('CSV processing error:', error);
+                alert('Error processing CSV file. Please check the file format.');
             }
         };
         reader.readAsText(file);
@@ -59,11 +100,16 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
             try {
                 const arrayBuffer = event.target.result;
                 const { headers, data } = parseXLSX(arrayBuffer);
-                console.log('XLSX data loaded:', { headers, rowCount: data.length });
-                // Chart rendering function will be called here
+                const answerCounts = countAnswers(data, headers);
+                console.log('XLSX data processed:', { 
+                    headers, 
+                    rowCount: data.length,
+                    answerCounts 
+                });
+                // Chart rendering function will be called here with headers and answerCounts
             } catch (error) {
-                console.error('XLSX parsing error:', error);
-                alert('Error parsing XLSX file. Please check the file format.');
+                console.error('XLSX processing error:', error);
+                alert('Error processing XLSX file. Please check the file format.');
             }
         };
         reader.readAsArrayBuffer(file);
